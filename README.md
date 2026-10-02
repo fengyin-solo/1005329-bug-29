@@ -68,4 +68,8 @@ npm run build
 - 字段、状态、动作与流转目标集中在 `frontend/src/data/modules.ts`；示例数据在
   `frontend/src/data/seed.ts`。
 - 状态流转只允许在 `local-service.ts` 里改，页面组件不做业务判断。
+- 探方验收的判定条件只有一份（`local-service.ts` 里的 `judgeAcceptance`）：遗留问题数为零判「通过」，
+  仍有遗留判「已整改」并在判定说明里写明原因。验收页每次读取前先用 `rejudgeAcceptance()` 把存量验收单
+  按现行阈值重判并落库：同一验收单号重复提交只保留最新一条，已归档的验收单沿用历史结论不重判，
+  重判结果同步写到探方台账的「验收结论」列，概览统计与明细都读落库后的同一份数据。
 - 想回到初始数据：清掉浏览器里 `archaeology-field:entries` 这一项，或调用 `resetModule(模块)`。

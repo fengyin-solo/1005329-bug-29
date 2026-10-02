@@ -43,9 +43,10 @@
       </thead>
       <tbody>
         <tr v-for="row in rows" :key="String(row.id)">
-          <td v-for="column in columns" :key="column">{{ row[column] ?? '—' }}</td>
+          <td v-for="column in columns" :key="column">{{ display(row[column]) }}</td>
           <td>{{ row.status }}</td>
           <td class="row-actions">
+            <button class="link" type="button" @click="openDetail(row)">明细</button>
             <button
               v-for="action in actions"
               :key="action"
@@ -63,6 +64,21 @@
       </tbody>
     </table>
 
+    <section v-if="selected" class="detail-panel">
+      <header class="detail-head">
+        <h3>验收单明细：{{ selected['验收单号'] }}</h3>
+        <button class="btn ghost" type="button" @click="selected = null">关闭</button>
+      </header>
+      <dl class="detail-grid">
+        <template v-for="column in columns" :key="column">
+          <dt>{{ column }}</dt>
+          <dd>{{ display(selected[column]) }}</dd>
+        </template>
+        <dt>当前状态</dt>
+        <dd>{{ selected.status }}</dd>
+      </dl>
+    </section>
+
     <footer class="page-foot">
       <span>共 {{ total }} 条探方验收记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
@@ -74,21 +90,24 @@
 import { computed, onMounted, ref } from 'vue'
 
 import {
+  acceptanceStats,
   downloadEntries,
   listEntries,
   moduleMeta,
+  rejudgeAcceptance,
   runAction as applyAction,
 } from '@/api/local-service'
 import type { EntryRow } from '@/data/types'
 
 const meta = moduleMeta('acceptance')
-const columns = ["验收单号", "验收探方", "验收类别", "验收人", "验收日期", "遗留问题数", "验收结论", "验收状态"]
+const columns = ["验收单号", "验收探方", "验收类别", "验收人", "验收日期", "遗留问题数", "验收结论", "判定说明", "验收状态"]
 const actions = ["提交验收", "确认通过", "要求整改"]
-const statuses = ["待验收", "验收中", "已通过", "已整改"]
-const stats = [{"label": "待验收探方", "value": 0}, {"label": "已通过探方", "value": 0}, {"label": "遗留问题总数", "value": 0}]
+const statuses = ["待验收", "验收中", "已通过", "已整改", "已归档"]
 
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
+const stats = ref<{ label: string; value: number }[]>([])
+const selected = ref<EntryRow | null>(null)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
@@ -98,6 +117,14 @@ const statusSummary = computed(() =>
     count: rows.value.filter((row) => String(row.status) === status).length,
   })),
 )
+
+function display(value: unknown) {
+  return value === '' || value === null || value === undefined ? '—' : String(value)
+}
+
+function openDetail(row: EntryRow) {
+  selected.value = row
+}
 
 function resetFilters() {
   filters.value = {}
@@ -125,9 +152,15 @@ function runAction(action: string, row: EntryRow) {
 function reload() {
   errorMessage.value = ''
   try {
+    // 先按现行阈值重判存量验收单并落库，再读列表/统计，保证概览、列表、明细是同一份结论。
+    rejudgeAcceptance()
     const payload = listEntries(meta.key, filters.value)
     rows.value = payload.items
     total.value = payload.total
+    stats.value = acceptanceStats()
+    if (selected.value) {
+      selected.value = payload.items.find((row) => Number(row.id) === Number(selected.value?.id)) ?? null
+    }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '探方验收列表读取失败'
   }
